@@ -1,0 +1,6 @@
+{
+  "name": "KagojPro — Smart Bangla Voice Memo & Instant Receipt Studio",
+  "description": "Smart Bangla and English voice-to-text notepad and instant digital cash memo, thermal POS receipt, and invoice studio for small shops and online sellers.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": []
+}
