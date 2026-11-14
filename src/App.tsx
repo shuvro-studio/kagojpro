@@ -1,22 +1,27 @@
-import { useEffect, useState } from 'react';
-import { History, Mic, ReceiptText } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
+import { History, LogOut, Mic, ReceiptText } from 'lucide-react';
+import { AuthGate } from './components/AuthGate';
 import { HistoryView } from './components/HistoryView';
 import { ReceiptMakerView } from './components/ReceiptMakerView';
 import { ReceiptPreview } from './components/ReceiptPreview';
 import { VoiceMemoView } from './components/VoiceMemoView';
+import { auth } from './firebase';
 import { TRANSLATIONS } from './i18n/translations';
+import {
+  deleteUserInvoice,
+  deleteUserNote,
+  ensureUserAccountDoc,
+  saveUserShopProfile,
+  subscribeUserInvoices,
+  subscribeUserNotes,
+  subscribeUserShopProfile,
+  upsertUserInvoice,
+  upsertUserNote,
+} from './services/accountData';
 import type { AppTab, Invoice, ShopProfile, UiLang, VoiceNote } from './types';
 import { generateNextInvoiceNumber } from './utils/calculations';
-import {
-  loadInvoices,
-  loadShopProfile,
-  loadUiLang,
-  loadVoiceNotes,
-  saveInvoices,
-  saveShopProfile,
-  saveUiLang,
-  saveVoiceNotes,
-} from './utils/storage';
+import { DEFAULT_SHOP_PROFILE, loadUiLang, saveUiLang } from './utils/storage';
 
 function createBlankDraftInvoice(existingInvoices: Invoice[]): Invoice {
   const today = new Date().toISOString().slice(0, 10);
@@ -46,19 +51,18 @@ function createBlankDraftInvoice(existingInvoices: Invoice[]): Invoice {
 }
 
 export default function App() {
+  const [authReady, setAuthReady] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
   const [activeTab, setActiveTab] = useState<AppTab>('voice');
   const [uiLang, setUiLang] = useState<UiLang>(() => loadUiLang());
-  const [notes, setNotes] = useState<VoiceNote[]>(() => loadVoiceNotes());
-  const [invoices, setInvoices] = useState<Invoice[]>(() => loadInvoices());
-  const [shop, setShop] = useState<ShopProfile>(() => loadShopProfile());
+  const [notes, setNotes] = useState<VoiceNote[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [shop, setShop] = useState<ShopProfile>(DEFAULT_SHOP_PROFILE);
 
-  const [activeNoteId, setActiveNoteId] = useState<string | null>(() => {
-    const initial = loadVoiceNotes();
-    return initial[0]?.id ?? null;
-  });
-
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [draftInvoice, setDraftInvoice] = useState<Invoice>(() =>
-    createBlankDraftInvoice(loadInvoices())
+    createBlankDraftInvoice([])
   );
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
 
@@ -66,23 +70,76 @@ export default function App() {
     { type: 'receipt' } | { type: 'note'; title: string; content: string } | null
   >(null);
 
+  const shopSaveTimerRef = useRef<number | null>(null);
   const t = TRANSLATIONS[uiLang];
 
   useEffect(() => {
     saveUiLang(uiLang);
   }, [uiLang]);
 
+  // Listen to Firebase Auth state changes and reset per-user state cleanly
   useEffect(() => {
-    saveVoiceNotes(notes);
-  }, [notes]);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthReady(true);
 
-  useEffect(() => {
-    saveInvoices(invoices);
-  }, [invoices]);
+      if (!user) {
+        setNotes([]);
+        setInvoices([]);
+        setShop(DEFAULT_SHOP_PROFILE);
+        setActiveNoteId(null);
+        setEditingInvoiceId(null);
+        setDraftInvoice(createBlankDraftInvoice([]));
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
+  // Subscribe strictly to the authenticated user's Firestore data
   useEffect(() => {
-    saveShopProfile(shop);
-  }, [shop]);
+    if (!authReady || !currentUser) {
+      return;
+    }
+
+    const uid = currentUser.uid;
+    let unsubNotes: (() => void) | undefined;
+    let unsubInvoices: (() => void) | undefined;
+    let unsubShop: (() => void) | undefined;
+    let cancelled = false;
+
+    void ensureUserAccountDoc(currentUser).then(() => {
+      if (cancelled) return;
+      unsubNotes = subscribeUserNotes(uid, (loadedNotes) => {
+        setNotes(loadedNotes);
+      });
+      unsubInvoices = subscribeUserInvoices(uid, (loadedInvoices) => {
+        setInvoices(loadedInvoices);
+        setDraftInvoice((prev) => {
+          // Keep draft invoice number in sync when creating a fresh blank invoice
+          if (!prev.customerName && prev.items.length === 1 && !prev.items[0].name) {
+            return {
+              ...prev,
+              invoiceNumber: generateNextInvoiceNumber(loadedInvoices),
+            };
+          }
+          return prev;
+        });
+      });
+      unsubShop = subscribeUserShopProfile(uid, (loadedProfile) => {
+        setShop(loadedProfile);
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubNotes?.();
+      unsubInvoices?.();
+      unsubShop?.();
+      if (shopSaveTimerRef.current) {
+        window.clearTimeout(shopSaveTimerRef.current);
+      }
+    };
+  }, [authReady, currentUser]);
 
   useEffect(() => {
     if (!printMode) return;
@@ -97,14 +154,36 @@ export default function App() {
     };
   }, [printMode]);
 
+  if (!authReady) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-6">
+        <div className="text-sm font-medium text-slate-600">{t.authLoading}</div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <AuthGate
+        t={t}
+        uiLang={uiLang}
+        onChangeUiLang={setUiLang}
+      />
+    );
+  }
+
+  const uid = currentUser.uid;
+  const userLabel =
+    currentUser.displayName || currentUser.email || 'KagojPro User';
+
   const handleSaveNote = (saved: VoiceNote) => {
-    setNotes((prev) => {
-      const exists = prev.some((n) => n.id === saved.id);
-      if (exists) {
-        return prev.map((n) => (n.id === saved.id ? saved : n));
-      }
-      return [saved, ...prev];
-    });
+    const isExisting = notes.some((n) => n.id === saved.id);
+    setNotes((prev) =>
+      isExisting
+        ? prev.map((n) => (n.id === saved.id ? saved : n))
+        : [saved, ...prev]
+    );
+    void upsertUserNote(uid, saved, isExisting);
   };
 
   const handleDeleteNote = (id: string) => {
@@ -112,18 +191,19 @@ export default function App() {
     if (activeNoteId === id) {
       setActiveNoteId(null);
     }
+    void deleteUserNote(uid, id);
   };
 
   const handleSaveInvoice = (invoice: Invoice) => {
-    setInvoices((prev) => {
-      const exists = prev.some((inv) => inv.id === invoice.id);
-      if (exists) {
-        return prev.map((inv) => (inv.id === invoice.id ? invoice : inv));
-      }
-      return [invoice, ...prev];
-    });
+    const isExisting = invoices.some((inv) => inv.id === invoice.id);
+    setInvoices((prev) =>
+      isExisting
+        ? prev.map((inv) => (inv.id === invoice.id ? invoice : inv))
+        : [invoice, ...prev]
+    );
     setEditingInvoiceId(invoice.id);
     setDraftInvoice(invoice);
+    void upsertUserInvoice(uid, invoice, isExisting);
   };
 
   const handleResetNewInvoice = () => {
@@ -145,11 +225,26 @@ export default function App() {
     if (editingInvoiceId === id) {
       setEditingInvoiceId(null);
     }
+    void deleteUserInvoice(uid, id);
+  };
+
+  const handleUpdateShop = (nextShop: ShopProfile) => {
+    setShop(nextShop);
+    if (shopSaveTimerRef.current) {
+      window.clearTimeout(shopSaveTimerRef.current);
+    }
+    shopSaveTimerRef.current = window.setTimeout(() => {
+      void saveUserShopProfile(uid, nextShop);
+    }, 500);
   };
 
   const handleOpenNoteFromHistory = (note: VoiceNote) => {
     setActiveNoteId(note.id);
     setActiveTab('voice');
+  };
+
+  const handleSignOut = async () => {
+    await signOut(auth);
   };
 
   const navItems: Array<{
@@ -233,33 +328,57 @@ export default function App() {
             })}
           </nav>
 
-          {/* Language Toggle in Sidebar Footer */}
-          <div className="p-4 border-t border-slate-200 space-y-2">
-            <div className="text-xs font-medium text-slate-500 px-1">
-              {t.uiLanguageLabel}
+          {/* Language Toggle + Account Card in Sidebar Footer */}
+          <div className="p-4 border-t border-slate-200 space-y-4">
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-slate-500 px-1">
+                {t.uiLanguageLabel}
+              </div>
+              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setUiLang('bn')}
+                  className={`min-h-[38px] px-2 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    uiLang === 'bn'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  বাংলা
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUiLang('en')}
+                  className={`min-h-[38px] px-2 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    uiLang === 'en'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  English
+                </button>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg">
+
+            <div className="pt-3 border-t border-slate-200 space-y-2">
+              <div className="px-1">
+                <div className="text-[11px] text-slate-500">{t.authSignedInAs}</div>
+                <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
+                  {userLabel}
+                </div>
+                {currentUser.email && currentUser.displayName && (
+                  <div className="text-[11px] font-mono text-slate-500 truncate">
+                    {currentUser.email}
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
-                onClick={() => setUiLang('bn')}
-                className={`min-h-[38px] px-2 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  uiLang === 'bn'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                onClick={handleSignOut}
+                className="w-full min-h-[40px] px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
-                বাংলা
-              </button>
-              <button
-                type="button"
-                onClick={() => setUiLang('en')}
-                className={`min-h-[38px] px-2 py-1 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  uiLang === 'en'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                English
+                <LogOut className="w-3.5 h-3.5" />
+                <span>{t.authSignOutBtn}</span>
               </button>
             </div>
           </div>
@@ -268,7 +387,7 @@ export default function App() {
         {/* Main Content Column */}
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Mobile Compact Top Bar (52px) */}
-          <header className="lg:hidden sticky top-0 z-30 h-[52px] px-4 bg-white/95 backdrop-blur-md border-b border-slate-200 flex items-center justify-between gap-4">
+          <header className="lg:hidden sticky top-0 z-30 h-[52px] px-4 bg-white/95 backdrop-blur-md border-b border-slate-200 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-7 h-7 rounded-md bg-emerald-600 text-white flex items-center justify-center font-bold text-sm shrink-0">
                 ক
@@ -278,28 +397,38 @@ export default function App() {
               </span>
             </div>
 
-            <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="inline-flex items-center gap-0.5 p-0.5 bg-slate-100 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setUiLang('bn')}
+                  className={`min-h-[34px] px-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    uiLang === 'bn'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  বাংলা
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUiLang('en')}
+                  className={`min-h-[34px] px-2 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    uiLang === 'en'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600'
+                  }`}
+                >
+                  EN
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => setUiLang('bn')}
-                className={`min-h-[34px] px-2.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  uiLang === 'bn'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600'
-                }`}
+                onClick={handleSignOut}
+                aria-label={t.authSignOutBtn}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
               >
-                বাংলা
-              </button>
-              <button
-                type="button"
-                onClick={() => setUiLang('en')}
-                className={`min-h-[34px] px-2.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  uiLang === 'en'
-                    ? 'bg-white text-slate-900 shadow-sm'
-                    : 'text-slate-600'
-                }`}
-              >
-                EN
+                <LogOut className="w-4 h-4" />
               </button>
             </div>
           </header>
@@ -327,7 +456,7 @@ export default function App() {
                 shop={shop}
                 t={t}
                 onUpdateDraft={setDraftInvoice}
-                onUpdateShop={setShop}
+                onUpdateShop={handleUpdateShop}
                 onSaveInvoice={handleSaveInvoice}
                 onResetNewInvoice={handleResetNewInvoice}
                 onPrintReceipt={() => setPrintMode({ type: 'receipt' })}

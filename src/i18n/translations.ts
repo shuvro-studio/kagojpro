@@ -122,6 +122,28 @@ export interface TranslationDict {
   downloadPngShort: string;
   noInvoicesEmpty: string;
   createFirstInvoiceBtn: string;
+
+  // Auth & Per-Account Workspace
+  authHeadline: string;
+  authSubheadline: string;
+  authSignInTab: string;
+  authSignUpTab: string;
+  authGoogleBtn: string;
+  authOrDivider: string;
+  authFullNameLabel: string;
+  authFullNamePlaceholder: string;
+  authEmailLabel: string;
+  authEmailPlaceholder: string;
+  authPasswordLabel: string;
+  authPasswordPlaceholder: string;
+  authSubmitSignIn: string;
+  authSubmitSignUp: string;
+  authSignOutBtn: string;
+  authSignedInAs: string;
+  authEmailProviderNotice: string;
+  authMissingFieldsError: string;
+  authWeakPasswordError: string;
+  authLoading: string;
 }
 
 export const TRANSLATIONS: Record<UiLang, TranslationDict> = {
@@ -248,6 +270,29 @@ export const TRANSLATIONS: Record<UiLang, TranslationDict> = {
     downloadPngShort: 'PNG',
     noInvoicesEmpty: 'No cash memos found for this filter.',
     createFirstInvoiceBtn: 'Create Cash Memo',
+
+    authHeadline: 'Your private voice & receipt workspace',
+    authSubheadline:
+      'Sign in or create an account so your Bangla voice memos, cash memos, and daily sales history remain private to your account.',
+    authSignInTab: 'Log In',
+    authSignUpTab: 'Sign Up',
+    authGoogleBtn: 'Continue with Google',
+    authOrDivider: 'or continue with email',
+    authFullNameLabel: 'Full Name or Shop Owner',
+    authFullNamePlaceholder: 'e.g. Tariqul Islam',
+    authEmailLabel: 'Email Address',
+    authEmailPlaceholder: 'you@example.com',
+    authPasswordLabel: 'Password',
+    authPasswordPlaceholder: 'At least 6 characters',
+    authSubmitSignIn: 'Log In to Account',
+    authSubmitSignUp: 'Create Account',
+    authSignOutBtn: 'Sign Out',
+    authSignedInAs: 'Signed in as',
+    authEmailProviderNotice:
+      'Email/Password sign-in is not enabled yet in Firebase Console (Authentication → Sign-in method → Email/Password). Please use Continue with Google above, or enable Email/Password in your Firebase project.',
+    authMissingFieldsError: 'Please fill in all required account fields.',
+    authWeakPasswordError: 'Password must be at least 6 characters.',
+    authLoading: 'Loading your private workspace…',
   },
   bn: {
     appName: 'KagojPro',
@@ -372,5 +417,28 @@ export const TRANSLATIONS: Record<UiLang, TranslationDict> = {
     downloadPngShort: 'PNG',
     noInvoicesEmpty: 'কোনো ক্যাশ মেমো পাওয়া যায়নি।',
     createFirstInvoiceBtn: 'নতুন মেমো তৈরি করুন',
+
+    authHeadline: 'আপনার নিজস্ব ভয়েস ও ক্যাশ মেমো অ্যাকাউন্ট',
+    authSubheadline:
+      'লগইন বা নতুন অ্যাকাউন্ট খুলুন যাতে আপনার সব ভয়েস নোট, ক্যাশ মেমো এবং দৈনিক বিক্রয়ের হিসাব শুধুমাত্র আপনার অ্যাকাউন্টেই সুরক্ষিত থাকে।',
+    authSignInTab: 'লগইন',
+    authSignUpTab: 'নতুন অ্যাকাউন্ট',
+    authGoogleBtn: 'গুগল দিয়ে প্রবেশ করুন',
+    authOrDivider: 'অথবা ইমেইল ব্যবহার করুন',
+    authFullNameLabel: 'আপনার নাম',
+    authFullNamePlaceholder: 'যেমন: তারিকুল ইসলাম',
+    authEmailLabel: 'ইমেইল ঠিকানা',
+    authEmailPlaceholder: 'you@example.com',
+    authPasswordLabel: 'পাসওয়ার্ড',
+    authPasswordPlaceholder: 'কমপক্ষে ৬ অক্ষর',
+    authSubmitSignIn: 'লগইন করুন',
+    authSubmitSignUp: 'অ্যাকাউন্ট তৈরি করুন',
+    authSignOutBtn: 'লগআউট',
+    authSignedInAs: 'লগইনকৃত অ্যাকাউন্ট',
+    authEmailProviderNotice:
+      'Firebase Console (Authentication → Sign-in method → Email/Password) থেকে ইমেইল লগইন এখনো চালু করা হয়নি। অনুগ্রহ করে উপরের "গুগল দিয়ে প্রবেশ করুন" বাটন ব্যবহার করুন অথবা Firebase Console থেকে Email/Password চালু করুন।',
+    authMissingFieldsError: 'অনুগ্রহ করে সবগুলো প্রয়োজনীয় ঘর পূরণ করুন।',
+    authWeakPasswordError: 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে।',
+    authLoading: 'আপনার ব্যক্তিগত অ্যাকাউন্ট লোড হচ্ছে…',
   },
 };

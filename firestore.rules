@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny all reads and writes by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAccountOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUserAccount(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'email', 'createdAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.createdAt is timestamp;
+    }
+
+    function isValidShopProfile(data, userId) {
+      return data.keys().hasAll(['ownerId', 'shopName', 'tagline', 'phone', 'address', 'stampText', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'shopName', 'tagline', 'phone', 'address', 'stampText', 'updatedAt'])
+        && data.ownerId is string && data.ownerId == userId
+        && data.shopName is string && data.shopName.size() <= 120
+        && data.tagline is string && data.tagline.size() <= 160
+        && data.phone is string && data.phone.size() <= 40
+        && data.address is string && data.address.size() <= 240
+        && data.stampText is string && data.stampText.size() <= 60
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidVoiceNote(data, userId) {
+      return data.keys().hasAll(['ownerId', 'title', 'content', 'speechLang', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'title', 'content', 'speechLang', 'createdAt', 'updatedAt'])
+        && data.ownerId is string && data.ownerId == userId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.content is string && data.content.size() <= 20000
+        && data.speechLang is string && data.speechLang in ['bn-BD', 'en-US']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvoiceItem(item) {
+      return item is map
+        && item.keys().hasAll(['id', 'name', 'quantity', 'unitPrice'])
+        && item.keys().hasOnly(['id', 'name', 'quantity', 'unitPrice'])
+        && item.id is string && item.id.size() >= 1 && item.id.size() <= 64
+        && item.name is string && item.name.size() >= 1 && item.name.size() <= 160
+        && (item.quantity is int || item.quantity is float) && item.quantity > 0 && item.quantity <= 1000000
+        && (item.unitPrice is int || item.unitPrice is float) && item.unitPrice >= 0 && item.unitPrice <= 100000000;
+    }
+
+    function isValidInvoice(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'invoiceNumber', 'date', 'customerName', 'customerPhone',
+          'items', 'discount', 'deliveryCharge', 'status', 'paidAmount', 'theme',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'invoiceNumber', 'date', 'customerName', 'customerPhone',
+          'items', 'discount', 'deliveryCharge', 'status', 'paidAmount', 'theme',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId is string && data.ownerId == userId
+        && data.invoiceNumber is string && data.invoiceNumber.size() >= 1 && data.invoiceNumber.size() <= 40
+        && data.date is string && data.date.size() >= 4 && data.date.size() <= 20
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 120
+        && data.customerPhone is string && data.customerPhone.size() <= 40
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 50
+        && isValidInvoiceItem(data.items[0])
+        && (data.discount is int || data.discount is float) && data.discount >= 0 && data.discount <= 100000000
+        && (data.deliveryCharge is int || data.deliveryCharge is float) && data.deliveryCharge >= 0 && data.deliveryCharge <= 100000000
+        && data.status is string && data.status in ['PAID', 'DUE']
+        && (data.paidAmount is int || data.paidAmount is float) && data.paidAmount >= 0 && data.paidAmount <= 100000000
+        && data.theme is string && data.theme in ['thermal', 'modern-blue', 'emerald-boutique']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isAccountOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isAccountOwner(userId)
+        && isValidId(userId)
+        && isValidUserAccount(incoming(), userId)
+        && incoming().createdAt == request.time;
+      allow update: if isAccountOwner(userId)
+        && isValidId(userId)
+        && isValidUserAccount(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email']);
+      allow delete: if false;
+
+      match /settings/{settingId} {
+        allow get: if isAccountOwner(userId) && isValidId(userId) && settingId == 'shop';
+        allow list: if false;
+        allow create: if isAccountOwner(userId)
+          && isValidId(userId)
+          && settingId == 'shop'
+          && isValidShopProfile(incoming(), userId)
+          && incoming().updatedAt == request.time;
+        allow update: if isAccountOwner(userId)
+          && isValidId(userId)
+          && settingId == 'shop'
+          && isValidShopProfile(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['shopName', 'tagline', 'phone', 'address', 'stampText', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /notes/{noteId} {
+        allow get: if isAccountOwner(userId) && isValidId(userId) && isValidId(noteId) && existing().ownerId == request.auth.uid;
+        allow list: if isAccountOwner(userId) && isValidId(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isAccountOwner(userId)
+          && isValidId(userId)
+          && isValidId(noteId)
+          && isValidVoiceNote(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isAccountOwner(userId)
+          && isValidId(userId)
+          && isValidId(noteId)
+          && isValidVoiceNote(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'speechLang', 'updatedAt']);
+        allow delete: if isAccountOwner(userId) && isValidId(userId) && isValidId(noteId) && existing().ownerId == request.auth.uid;
+      }
+
+      match /invoices/{invoiceId} {
+        allow get: if isAccountOwner(userId) && isValidId(userId) && isValidId(invoiceId) && existing().ownerId == request.auth.uid;
+        allow list: if isAccountOwner(userId) && isValidId(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isAccountOwner(userId)
+          && isValidId(userId)
+          && isValidId(invoiceId)
+          && isValidInvoice(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isAccountOwner(userId)
+          && isValidId(userId)
+          && isValidId(invoiceId)
+          && isValidInvoice(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'invoiceNumber', 'date', 'customerName', 'customerPhone',
+            'items', 'discount', 'deliveryCharge', 'status', 'paidAmount', 'theme', 'updatedAt'
+          ]);
+        allow delete: if isAccountOwner(userId) && isValidId(userId) && isValidId(invoiceId) && existing().ownerId == request.auth.uid;
+      }
+    }
+  }
+}

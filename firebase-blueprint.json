@@ -1,0 +1,193 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Authenticated user account metadata stored at the root of the user's private namespace.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "email", "createdAt"]
+    },
+    "ShopProfile": {
+      "title": "ShopProfile",
+      "description": "Customizable business header and stamp settings owned by a single user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "shopName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "tagline": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "phone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "stampText": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "shopName", "tagline", "phone", "address", "stampText", "updatedAt"]
+    },
+    "VoiceNote": {
+      "title": "VoiceNote",
+      "description": "Saved Bangla or English voice memo owned exclusively by one user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "speechLang": {
+          "type": "string",
+          "enum": ["bn-BD", "en-US"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "content", "speechLang", "createdAt", "updatedAt"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Digital cash memo / invoice document owned exclusively by one user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "invoiceNumber": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "date": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 20
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "customerPhone": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "items": {
+          "type": "array"
+        },
+        "discount": {
+          "type": "number"
+        },
+        "deliveryCharge": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PAID", "DUE"]
+        },
+        "paidAmount": {
+          "type": "number"
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["thermal", "modern-blue", "emerald-boutique"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerId",
+        "invoiceNumber",
+        "date",
+        "customerName",
+        "customerPhone",
+        "items",
+        "discount",
+        "deliveryCharge",
+        "status",
+        "paidAmount",
+        "theme",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "Private user account profile document containing PII (email, displayName)."
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/ShopProfile" },
+      "description": "Private shop header and stamp profile per user account."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/VoiceNote" },
+      "description": "Private voice notes collection scoped per authenticated user."
+    },
+    "/users/{userId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Private cash memos and invoices collection scoped per authenticated user."
+    }
+  }
+}
